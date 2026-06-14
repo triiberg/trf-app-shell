@@ -109,6 +109,24 @@ function defaultLoginUrl(): string {
   return `https://login.${apex}`;
 }
 
+// Theme is stored in a cookie on the apex domain (e.g. `.trf.is`) so the choice
+// is shared across every *.trf.is service — navigating AI → Purchase keeps the
+// same theme. Falls back to the legacy per-origin localStorage value on first read.
+function readThemeCookie(): string | null {
+  const m = document.cookie.match(/(?:^|; )trf-theme=([^;]*)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+function writeThemeCookie(v: string): void {
+  const parts = window.location.hostname.split(".");
+  const domain = parts.length >= 2 ? `; domain=.${parts.slice(-2).join(".")}` : "";
+  document.cookie = `trf-theme=${v}; path=/; max-age=31536000; samesite=lax${domain}`;
+}
+function initialDark(): boolean {
+  const c = readThemeCookie();
+  if (c === "dark" || c === "light") return c === "dark";
+  return localStorage.getItem("trf-theme") === "dark";
+}
+
 /** Re-render when the language changes (TranslationClient.setLang dispatches this). */
 function useLangVersion(): void {
   const [, setV] = useState(0);
@@ -285,7 +303,7 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, itemAct
   const [items, setItems] = useState<MenuItem[]>([]);
   const [baseUrls, setBaseUrls] = useState<AppBaseUrls>({});
   const [openGroups, setOpenGroups] = useState<string[]>([]);
-  const [dark, setDark] = useState<boolean>(() => localStorage.getItem("trf-theme") === "dark");
+  const [dark, setDark] = useState<boolean>(initialDark);
   const [orgs, setOrgs] = useState<OrgOption[]>([]);
   const orgName = useMemo(() => orgNameFromCookie(slug), [slug]);
   const lang = translation.getLang();
@@ -298,6 +316,7 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, itemAct
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
+    writeThemeCookie(dark ? "dark" : "light");
     localStorage.setItem("trf-theme", dark ? "dark" : "light");
   }, [dark]);
 
