@@ -9,7 +9,7 @@ import {
 import {
   AppShell, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarMenu,
   SidebarMenuItem, SidebarMenuButton, SidebarMenuSub, SidebarTrigger, useSidebar,
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
   Button, Logo, Text, cn,
 } from "@trf/ui2";
 import { fetchDiscoveryMenu, logout } from "@trf/ui";
@@ -140,30 +140,39 @@ function SidebarBrandInner({ orgName, appLabel, showChevron }: { orgName: string
   );
 }
 
-// Brand header. With >1 organisation it becomes a picker that switches org by
-// navigating to `/app/<slug>`; otherwise it's the plain (non-interactive) brand.
+// Brand header — always a dropdown: lists organisations to switch to (when the
+// user has more than one) and an "Organisation settings" link to the portal.
 function SidebarBrand({
-  orgName, appLabel, orgs, currentSlug, onSelect,
+  orgName, appLabel, orgs, currentSlug, onSelect, orgSettingsUrl,
 }: {
   orgName: string | null;
   appLabel: string;
   orgs: OrgOption[];
   currentSlug?: string;
   onSelect: (slug: string) => void;
+  orgSettingsUrl: string;
 }) {
-  if (orgs.length <= 1) return <SidebarBrandInner orgName={orgName} appLabel={appLabel} showChevron={false} />;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="w-full hover:bg-muted transition-colors">
         <SidebarBrandInner orgName={orgName} appLabel={appLabel} showChevron />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
-        {orgs.map((o) => (
-          <DropdownMenuItem key={o.id} onSelect={() => onSelect(o.slug)}>
-            <Check className={cn("mr-2 size-4 shrink-0", o.slug === currentSlug ? "opacity-100" : "opacity-0")} />
-            <span className="truncate">{o.name}</span>
-          </DropdownMenuItem>
-        ))}
+        {orgs.length > 1 && (
+          <>
+            {orgs.map((o) => (
+              <DropdownMenuItem key={o.id} onSelect={() => onSelect(o.slug)}>
+                <Check className={cn("mr-2 size-4 shrink-0", o.slug === currentSlug ? "opacity-100" : "opacity-0")} />
+                <span className="truncate">{o.name}</span>
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+          </>
+        )}
+        <DropdownMenuItem onSelect={() => { window.location.href = orgSettingsUrl; }}>
+          <Settings className="mr-2 size-4 shrink-0" />
+          <span>Organisation settings</span>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -281,6 +290,9 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, itemAct
   const orgName = useMemo(() => orgNameFromCookie(slug), [slug]);
   const lang = translation.getLang();
   const portalBase = loginUrl ?? defaultLoginUrl();
+  const orgSettingsUrl = slug
+    ? `${portalBase}/app/${slug}/manage-organization/list`
+    : `${portalBase}/app/manage-organization`;
 
   const label = (item: MenuItem) => item.labels?.[lang] ?? item.labels?.en ?? item.label;
 
@@ -391,6 +403,7 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, itemAct
           orgs={orgs}
           currentSlug={slug}
           onSelect={(s) => navigate(`/app/${s}`)}
+          orgSettingsUrl={orgSettingsUrl}
         />
       </SidebarHeader>
       <SidebarContent>
