@@ -10,7 +10,7 @@ import {
   AppShell, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarMenu,
   SidebarMenuItem, SidebarMenuButton, SidebarMenuSub, SidebarTrigger, useSidebar,
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
-  Button, Logo, Text, cn,
+  Button, Avatar, Text, cn,
 } from "@trf/ui2";
 import { fetchDiscoveryMenu, logout } from "@trf/ui";
 import type { MenuItem, AppBaseUrls } from "@trf/ui";
@@ -147,11 +147,11 @@ function useLangVersion(): void {
   }, []);
 }
 
-function SidebarBrandInner({ orgName, appLabel }: { orgName: string | null; appLabel: string }) {
+function SidebarBrandInner({ orgName, appLabel, colorKey }: { orgName: string | null; appLabel: string; colorKey?: string }) {
   const { collapsed } = useSidebar();
   return (
     <div className="flex w-full items-center gap-2 overflow-hidden px-4 py-3.5">
-      <Logo size={26} className="shrink-0" />
+      <Avatar name={orgName} colorKey={colorKey} size={28} className="shrink-0" />
       <div
         className={cn(
           "min-w-0 flex-1 overflow-hidden text-left transition-[max-width,opacity] duration-200",
@@ -203,7 +203,7 @@ function SidebarBrand({ orgName, appLabel, ...org }: { orgName: string | null; a
   return (
     <DropdownMenu onOpenChange={(open) => { if (open) org.onOpen(); }}>
       <DropdownMenuTrigger className="w-full hover:bg-muted transition-colors">
-        <SidebarBrandInner orgName={orgName} appLabel={appLabel} />
+        <SidebarBrandInner orgName={orgName} appLabel={appLabel} colorKey={org.currentSlug} />
       </DropdownMenuTrigger>
       <OrgMenuItems {...org} />
     </DropdownMenu>
@@ -274,7 +274,7 @@ function MobileBar({
         scrollHide && hidden && "-translate-y-full",
       )}
     >
-      <Logo size={22} className="shrink-0" />
+      <Avatar name={orgName} colorKey={org.currentSlug} size={24} className="shrink-0" />
       <div className="flex min-w-0 flex-1 items-center gap-1 text-sm">
         <DropdownMenu onOpenChange={(open) => { if (open) org.onOpen(); }}>
           <DropdownMenuTrigger className="min-w-0 truncate font-medium outline-none hover:opacity-80">
