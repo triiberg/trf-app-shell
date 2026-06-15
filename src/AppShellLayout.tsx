@@ -4,11 +4,11 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Sparkles, BadgeDollarSign, Receipt, Wallet, Package, ScrollText, PieChart, Handshake,
   Files, Boxes, Table2, Settings, ClipboardCheck, Network, Moon, Sun, Monitor, Circle,
-  Plus, LogOut, ChevronsUpDown, ChevronRight, Check, Globe,
+  Plus, LogOut, ChevronRight, Check, Globe, Menu, X,
 } from "lucide-react";
 import {
   AppShell, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarMenu,
-  SidebarMenuItem, SidebarMenuButton, SidebarMenuSub, SidebarTrigger, SidebarMobileTrigger, useSidebar,
+  SidebarMenuItem, SidebarMenuButton, SidebarMenuSub, SidebarTrigger, useSidebar,
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
   Button, Logo, Text, cn,
 } from "@trf/ui2";
@@ -147,81 +147,108 @@ function useLangVersion(): void {
   }, []);
 }
 
-function SidebarBrandInner({ orgName, appLabel, showChevron }: { orgName: string | null; appLabel: string; showChevron: boolean }) {
+function SidebarBrandInner({ orgName, appLabel }: { orgName: string | null; appLabel: string }) {
   const { collapsed } = useSidebar();
   return (
     <div className="flex w-full items-center gap-2 overflow-hidden px-4 py-3.5">
       <Logo size={26} className="shrink-0" />
       <div
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-1 overflow-hidden transition-[max-width,opacity] duration-200",
+          "min-w-0 flex-1 overflow-hidden text-left transition-[max-width,opacity] duration-200",
           collapsed ? "max-w-0 opacity-0" : "max-w-[12rem] opacity-100",
         )}
       >
-        <div className="min-w-0 flex-1 text-left">
-          <Text as="span" size="sm" weight="semibold" className="block truncate leading-tight">{orgName ?? "TRF"}</Text>
-          <Text as="span" size="xs" tone="muted" className="block truncate">{appLabel}</Text>
-        </div>
-        {showChevron && <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />}
+        <Text as="span" size="sm" weight="semibold" className="block truncate leading-tight">{orgName ?? "TRF"}</Text>
+        <Text as="span" size="xs" tone="muted" className="block truncate">{appLabel}</Text>
       </div>
     </div>
   );
 }
 
-// Brand header — always a dropdown: lists organisations to switch to (when the
-// user has more than one) and an "Organisation settings" link to the portal.
-function SidebarBrand({
-  orgName, appLabel, orgs, currentSlug, onSelect, orgSettingsUrl, onOpen,
-}: {
-  orgName: string | null;
-  appLabel: string;
+interface OrgPickerProps {
   orgs: OrgOption[];
   currentSlug?: string;
   onSelect: (slug: string) => void;
   orgSettingsUrl: string;
   onOpen: () => void;
-}) {
+}
+
+// Shared dropdown body: switch orgs (when >1) + an "Organisation settings" link.
+function OrgMenuItems({ orgs, currentSlug, onSelect, orgSettingsUrl }: Omit<OrgPickerProps, "onOpen">) {
   const { setMobileOpen } = useSidebar();
   return (
-    <DropdownMenu onOpenChange={(open) => { if (open) onOpen(); }}>
+    <DropdownMenuContent align="start" className="w-56">
+      {orgs.length > 1 && (
+        <>
+          {orgs.map((o) => (
+            <DropdownMenuItem key={o.id} onSelect={() => { setMobileOpen(false); onSelect(o.slug); }}>
+              <Check className={cn("mr-2 size-4 shrink-0", o.slug === currentSlug ? "opacity-100" : "opacity-0")} />
+              <span className="truncate">{o.name}</span>
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+        </>
+      )}
+      <DropdownMenuItem onSelect={() => { setMobileOpen(false); window.location.href = orgSettingsUrl; }}>
+        <Settings className="mr-2 size-4 shrink-0" />
+        <span>Organisation settings</span>
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  );
+}
+
+// Desktop brand header — the whole block is the org-picker trigger (no chevron;
+// tapping the org name opens the picker).
+function SidebarBrand({ orgName, appLabel, ...org }: { orgName: string | null; appLabel: string } & OrgPickerProps) {
+  return (
+    <DropdownMenu onOpenChange={(open) => { if (open) org.onOpen(); }}>
       <DropdownMenuTrigger className="w-full hover:bg-muted transition-colors">
-        <SidebarBrandInner orgName={orgName} appLabel={appLabel} showChevron />
+        <SidebarBrandInner orgName={orgName} appLabel={appLabel} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56">
-        {orgs.length > 1 && (
-          <>
-            {orgs.map((o) => (
-              <DropdownMenuItem key={o.id} onSelect={() => { setMobileOpen(false); onSelect(o.slug); }}>
-                <Check className={cn("mr-2 size-4 shrink-0", o.slug === currentSlug ? "opacity-100" : "opacity-0")} />
-                <span className="truncate">{o.name}</span>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-          </>
-        )}
-        <DropdownMenuItem onSelect={() => { setMobileOpen(false); window.location.href = orgSettingsUrl; }}>
-          <Settings className="mr-2 size-4 shrink-0" />
-          <span>Organisation settings</span>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
+      <OrgMenuItems {...org} />
     </DropdownMenu>
   );
 }
 
-// Mobile-only top bar: breadcrumb (org › app › active section) on the left, menu
-// toggle on the right. The hamburger is positioned/sized to match the open drawer's
-// close (X) exactly, so it reads as one button flipping ☰ ⇄ ✕. Sticky, top safe-area.
-function MobileTopBar({ orgName, appLabel, section }: { orgName: string | null; appLabel: string; section: string | null }) {
+// The single menu toggle (☰ when closed, ✕ when open). Living in the breadcrumb bar
+// — which renders in both states — keeps it pixel-aligned across open/close.
+function MobileToggle() {
+  const { mobileOpen, setMobileOpen } = useSidebar();
+  return (
+    <button
+      type="button"
+      aria-label={mobileOpen ? "Close menu" : "Open menu"}
+      aria-expanded={mobileOpen}
+      onClick={() => setMobileOpen(!mobileOpen)}
+      className="flex size-10 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-6"
+    >
+      {mobileOpen ? <X /> : <Menu />}
+    </button>
+  );
+}
+
+// Unified mobile bar (breadcrumb + toggle). Rendered identically as the closed-state
+// top bar and as the open drawer's header, so the two states are seamless. The org
+// name is the org-picker trigger (no chevron). Height matches the footer (min-h-14).
+function MobileBar({
+  orgName, appLabel, section, ...org
+}: { orgName: string | null; appLabel: string; section: string | null } & OrgPickerProps) {
   const Sep = () => <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />;
   return (
-    <div className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-card px-2 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:hidden">
+    <div className="sticky top-0 z-30 flex min-h-14 shrink-0 items-center gap-1.5 border-b border-border bg-card px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)] md:hidden">
       <Logo size={22} className="shrink-0" />
       <div className="flex min-w-0 flex-1 items-center gap-1 text-sm">
-        {orgName && (<><span className="min-w-0 truncate font-medium">{orgName}</span><Sep /></>)}
+        <DropdownMenu onOpenChange={(open) => { if (open) org.onOpen(); }}>
+          <DropdownMenuTrigger className="min-w-0 truncate font-medium outline-none hover:opacity-80">
+            {orgName ?? "TRF"}
+          </DropdownMenuTrigger>
+          <OrgMenuItems {...org} />
+        </DropdownMenu>
+        <Sep />
         <span className="shrink-0 text-muted-foreground">{appLabel}</span>
         {section && (<><Sep /><span className="min-w-0 truncate font-medium">{section}</span></>)}
       </div>
-      <SidebarMobileTrigger className="size-10 shrink-0 [&_svg]:size-6" />
+      <MobileToggle />
     </div>
   );
 }
@@ -259,7 +286,7 @@ function LanguageSelect({ translation }: { translation: TranslationLike }) {
         <DropdownMenuTrigger
           aria-label="Language"
           title="Language"
-          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4 max-md:size-12 max-md:[&_svg]:size-6"
+          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4 max-md:size-10 max-md:[&_svg]:size-5"
         >
           <Globe />
         </DropdownMenuTrigger>
@@ -292,7 +319,7 @@ function LogoutButton({ loginUrl }: { loginUrl: string }) {
         onClick={() => logout(loginUrl)}
         aria-label="Sign out"
         title="Sign out"
-        className="size-8 text-muted-foreground hover:text-foreground max-md:size-12 max-md:[&_svg]:size-6"
+        className="size-8 text-muted-foreground hover:text-foreground max-md:size-10 max-md:[&_svg]:size-5"
       >
         <LogOut />
       </Button>
@@ -320,7 +347,7 @@ function ThemeSelect({ choice, onChange }: { choice: ThemeChoice; onChange: (c: 
         <DropdownMenuTrigger
           aria-label="Theme"
           title="Theme"
-          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4 max-md:size-12 max-md:[&_svg]:size-6"
+          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4 max-md:size-10 max-md:[&_svg]:size-5"
         >
           <TriggerIcon />
         </DropdownMenuTrigger>
@@ -512,25 +539,28 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
     );
   };
 
+  const orgProps: OrgPickerProps = {
+    orgs,
+    currentSlug: slug,
+    onSelect: (s) => navigate(`/app/${s}`),
+    orgSettingsUrl,
+    onOpen: refreshOrgs,
+  };
+
   const sidebar = (
     <Sidebar>
-      <SidebarHeader>
-        <SidebarBrand
-          orgName={orgName}
-          appLabel={appLabel}
-          orgs={orgs}
-          currentSlug={slug}
-          onSelect={(s) => navigate(`/app/${s}`)}
-          orgSettingsUrl={orgSettingsUrl}
-          onOpen={refreshOrgs}
-        />
+      {/* Mobile drawer header: the same breadcrumb bar as the closed top bar. */}
+      <MobileBar orgName={orgName} appLabel={appLabel} section={activeSectionLabel(items)} {...orgProps} />
+      {/* Desktop brand (org picker). */}
+      <SidebarHeader className="hidden md:flex">
+        <SidebarBrand orgName={orgName} appLabel={appLabel} {...orgProps} />
       </SidebarHeader>
       <SidebarContent>
         <SidebarMenu>
           {items.map((item) => renderNode(item, true))}
         </SidebarMenu>
       </SidebarContent>
-      <SidebarFooter className="max-md:justify-around max-md:gap-2 max-md:px-2 max-md:py-3">
+      <SidebarFooter className="max-md:min-h-14 max-md:justify-around max-md:px-3">
         <LanguageSelect translation={translation} />
         <ThemeSelect choice={themeChoice} onChange={setThemeChoice} />
         <LogoutButton loginUrl={portalBase} />
@@ -543,7 +573,7 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
   // The mobile top bar (md:hidden) sits above the routed content inside the inset.
   return (
     <AppShell sidebar={sidebar} openGroups={openGroups} onOpenGroupsChange={setOpenGroups}>
-      <MobileTopBar orgName={orgName} appLabel={appLabel} section={activeSectionLabel(items)} />
+      <MobileBar orgName={orgName} appLabel={appLabel} section={activeSectionLabel(items)} {...orgProps} />
       {children}
     </AppShell>
   );
