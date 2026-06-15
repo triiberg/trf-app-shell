@@ -151,26 +151,29 @@ function MenuSearchBox({
     );
   }
   return (
-    <div className="relative px-2 pb-1 max-md:px-1">
-      <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground max-md:left-3" />
-      <Input
-        type="search"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search…"
-        aria-label="Search menu"
-        className="h-9 pl-9 pr-8 max-md:h-11 max-md:text-base [&::-webkit-search-cancel-button]:appearance-none"
-      />
-      {query && (
-        <button
-          type="button"
-          onClick={() => setQuery("")}
-          aria-label="Clear search"
-          className="absolute right-4 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-foreground max-md:right-3"
-        >
-          <X className="size-4" />
-        </button>
-      )}
+    <div className="px-2 pb-1 max-md:px-1">
+      {/* Tight relative wrapper hugs the input so top-1/2 centers the icons exactly. */}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search…"
+          aria-label="Search menu"
+          className="h-9 pl-9 pr-8 max-md:h-11 max-md:text-base [&::-webkit-search-cancel-button]:appearance-none"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            aria-label="Clear search"
+            className="absolute right-2.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
