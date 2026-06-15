@@ -130,8 +130,13 @@ function Highlight({ text, query }: { text: string; query: string }) {
 /** Inline filter box at the top of the menu. On the collapsed rail it becomes a
  * single search icon button that opens the ⌘K palette (no room for an input). */
 function MenuSearchBox({
-  query, setQuery, onOpenPalette,
-}: { query: string; setQuery: (v: string) => void; onOpenPalette: () => void }) {
+  query, setQuery, onOpenPalette, onKeyDown,
+}: {
+  query: string;
+  setQuery: (v: string) => void;
+  onOpenPalette: () => void;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
+}) {
   const { collapsed } = useSidebar();
   if (collapsed) {
     return (
@@ -156,6 +161,7 @@ function MenuSearchBox({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onClear={() => setQuery("")}
+        onKeyDown={onKeyDown}
         placeholder="Search…"
         aria-label="Search menu"
         className="h-9 max-md:h-11 max-md:text-base"
@@ -528,6 +534,8 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
   const [orgs, setOrgs] = useState<OrgOption[]>([]);
   const [query, setQuery] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const orgName = useMemo(() => orgNameFromCookie(slug), [slug]);
   const lang = translation.getLang();
   const portalBase = loginUrl ?? defaultLoginUrl();
@@ -693,6 +701,32 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
     [searchLeaves, query],
   );
 
+  // First result is auto-selected; reset to it whenever the query (hence results) changes.
+  useEffect(() => { setActiveIndex(0); }, [query]);
+  // Keep the highlighted result scrolled into view as the user arrows through.
+  useEffect(() => {
+    resultsRef.current
+      ?.querySelector<HTMLElement>(`[data-result-index="${activeIndex}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, results]);
+
+  // Arrow/Enter navigation for the inline result list (wraps around). Escape clears.
+  const onSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") { setQuery(""); return; }
+    if (!results.length) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => (i + 1) % results.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => (i - 1 + results.length) % results.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const leaf = results[activeIndex] ?? results[0];
+      if (leaf) goFromSearch(leaf.item);
+    }
+  };
+
   // ⌘K / Ctrl-K toggles the command palette anywhere (also works on the collapsed rail).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -754,34 +788,39 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
         <SidebarBrand orgName={orgName} appLabel={appLabel} {...orgProps} />
       </SidebarHeader>
       <SidebarContent>
-        <MenuSearchBox query={query} setQuery={setQuery} onOpenPalette={() => setPaletteOpen(true)} />
+        <MenuSearchBox query={query} setQuery={setQuery} onOpenPalette={() => setPaletteOpen(true)} onKeyDown={onSearchKeyDown} />
         {query.trim() ? (
-          <SidebarMenu>
-            {results.length === 0 ? (
-              <Text className="px-3 py-2 text-sm text-muted-foreground">No matches</Text>
-            ) : (
-              results.map((leaf) => (
-                <SidebarMenuItem key={leaf.item.id}>
-                  <SidebarMenuButton
-                    tooltip={label(leaf.item)}
-                    isActive={isActive(leaf.item)}
-                    onClick={() => goFromSearch(leaf.item)}
-                  >
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate">
-                        <Highlight text={label(leaf.item)} query={query} />
-                      </span>
-                      {leaf.trail.length > 0 && (
-                        <span className="truncate text-xs text-muted-foreground">
-                          {leaf.trail.join(" › ")}
+          <div ref={resultsRef}>
+            <SidebarMenu>
+              {results.length === 0 ? (
+                <Text className="px-3 py-2 text-sm text-muted-foreground">No matches</Text>
+              ) : (
+                results.map((leaf, idx) => (
+                  <SidebarMenuItem key={leaf.item.id}>
+                    <SidebarMenuButton
+                      data-result-index={idx}
+                      tooltip={label(leaf.item)}
+                      isActive={isActive(leaf.item)}
+                      onMouseMove={() => setActiveIndex(idx)}
+                      onClick={() => goFromSearch(leaf.item)}
+                      className={idx === activeIndex ? "bg-accent text-accent-foreground" : undefined}
+                    >
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate">
+                          <Highlight text={label(leaf.item)} query={query} />
                         </span>
-                      )}
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))
-            )}
-          </SidebarMenu>
+                        {leaf.trail.length > 0 && (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {leaf.trail.join(" › ")}
+                          </span>
+                        )}
+                      </span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))
+              )}
+            </SidebarMenu>
+          </div>
         ) : (
           <SidebarMenu>
             {items.map((item) => renderNode(item, true))}
