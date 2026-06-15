@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Sparkles, BadgeDollarSign, Receipt, Wallet, Package, ScrollText, PieChart, Handshake,
   Files, Boxes, Table2, Settings, ClipboardCheck, Network, Moon, Sun, Monitor, Circle,
-  Plus, LogOut, ChevronRight, Check, Globe, Menu, X,
+  Plus, LogOut, ChevronRight, ChevronsUpDown, Check, Globe, Menu, X,
 } from "lucide-react";
 import {
   AppShell, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarMenu,
@@ -154,12 +154,16 @@ function SidebarBrandInner({ orgName, appLabel, colorKey }: { orgName: string | 
       <Avatar name={orgName} colorKey={colorKey} size={28} className="shrink-0" />
       <div
         className={cn(
-          "min-w-0 flex-1 overflow-hidden text-left transition-[max-width,opacity] duration-200",
+          "flex min-w-0 flex-1 items-center gap-1 overflow-hidden transition-[max-width,opacity] duration-200",
           collapsed ? "max-w-0 opacity-0" : "max-w-[12rem] opacity-100",
         )}
       >
-        <Text as="span" size="sm" weight="semibold" className="block truncate leading-tight">{orgName ?? "TRF"}</Text>
-        <Text as="span" size="xs" tone="muted" className="block truncate">{appLabel}</Text>
+        <div className="min-w-0 flex-1 text-left">
+          <Text as="span" size="sm" weight="semibold" className="block truncate leading-tight">{orgName ?? "TRF"}</Text>
+          <Text as="span" size="xs" tone="muted" className="block truncate">{appLabel}</Text>
+        </div>
+        {/* Desktop-only org-switcher affordance (mobile uses the breadcrumb). */}
+        <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
       </div>
     </div>
   );
