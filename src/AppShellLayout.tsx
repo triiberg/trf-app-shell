@@ -92,13 +92,20 @@ function jwtToken(): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
+// Decode a JWT payload as UTF-8 (base64url) — plain atob mangles non-ASCII names
+// like "OÜ".
+function decodeJwtPayload(token: string): { organization?: { name?: string } } {
+  const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 function orgNameFromCookie(slug?: string): string | null {
   if (!slug) return null;
   const m = document.cookie.match(new RegExp(`trf_jwt_${slug}=([^;]+)`));
   if (!m) return null;
   try {
-    const payload = JSON.parse(atob(m[1].split(".")[1]));
-    return payload?.organization?.name ?? null;
+    return decodeJwtPayload(m[1])?.organization?.name ?? null;
   } catch {
     return null;
   }
@@ -251,7 +258,7 @@ function LanguageSelect({ translation }: { translation: TranslationLike }) {
         <DropdownMenuTrigger
           aria-label="Language"
           title="Language"
-          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4"
+          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4 max-md:size-12 max-md:[&_svg]:size-6"
         >
           <Globe />
         </DropdownMenuTrigger>
@@ -284,7 +291,7 @@ function LogoutButton({ loginUrl }: { loginUrl: string }) {
         onClick={() => logout(loginUrl)}
         aria-label="Sign out"
         title="Sign out"
-        className="size-8 text-muted-foreground hover:text-foreground"
+        className="size-8 text-muted-foreground hover:text-foreground max-md:size-12 max-md:[&_svg]:size-6"
       >
         <LogOut />
       </Button>
@@ -312,7 +319,7 @@ function ThemeSelect({ choice, onChange }: { choice: ThemeChoice; onChange: (c: 
         <DropdownMenuTrigger
           aria-label="Theme"
           title="Theme"
-          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4"
+          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4 max-md:size-12 max-md:[&_svg]:size-6"
         >
           <TriggerIcon />
         </DropdownMenuTrigger>
@@ -522,7 +529,7 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
           {items.map((item) => renderNode(item, true))}
         </SidebarMenu>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="max-md:justify-around max-md:gap-2 max-md:px-2 max-md:py-3">
         <LanguageSelect translation={translation} />
         <ThemeSelect choice={themeChoice} onChange={setThemeChoice} />
         <LogoutButton loginUrl={portalBase} />
