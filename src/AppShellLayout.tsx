@@ -739,6 +739,27 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Built-in "new chat" + on the AI chat row, shown in EVERY app's menu. Detects the
+  // AI chat leaf generically: app id "ai" (or an ai.* host for cross-app links) on the
+  // /chat route (or the AI app index). Clicking opens a fresh AI chat — internally when
+  // already in the AI app (+ a trf:new-chat reset event), else a full cross-app nav.
+  const aiChatAction = (item: MenuItem, ctx: { href?: string; internal: boolean }): ItemAction | null => {
+    if (!ctx.href) return null;
+    let host = "", path = ctx.href;
+    try { const u = new URL(ctx.href, window.location.origin); host = u.hostname; path = u.pathname; } catch { /* relative */ }
+    const isAi = item.appId === "ai" || host.split(".")[0] === "ai" || (ctx.internal && appId === "ai");
+    const isChat = path.endsWith("/chat") || (!!slug && path === `/app/${slug}`);
+    if (!isAi || !isChat) return null;
+    return {
+      label: "New chat",
+      onClick: () => {
+        if (ctx.internal) navigate(ctx.href!);
+        else window.location.href = ctx.href!;
+        window.dispatchEvent(new Event("trf:new-chat"));
+      },
+    };
+  };
+
   // Recursive nav node: a group (with children) recurses into SidebarMenuSub; a leaf
   // navigates. Only top-level rows carry a domain icon (matches the existing look).
   const renderNode = (item: MenuItem, top: boolean): React.ReactNode => {
@@ -755,7 +776,8 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
         </SidebarMenuItem>
       );
     }
-    const action = itemAction?.(item, resolve(item)) ?? null;
+    const ctx = resolve(item);
+    const action = itemAction?.(item, ctx) ?? aiChatAction(item, ctx);
     return (
       <SidebarMenuItem key={item.id} className={action ? "group/item relative" : undefined}>
         <SidebarMenuButton
