@@ -222,6 +222,13 @@ function orgNameFromCookie(slug?: string): string | null {
   }
 }
 
+/** Raw org-scoped JWT (the `trf_jwt_<slug>` cookie) — used as the per-org bearer. */
+function orgJwt(slug?: string): string | null {
+  if (!slug) return null;
+  const m = document.cookie.match(new RegExp(`trf_jwt_${slug}=([^;]+)`));
+  return m ? m[1] : null;
+}
+
 function apexFor(sub: string): string {
   if (typeof window === "undefined") return `https://${sub}.trf.is`;
   const parts = window.location.hostname.split(".");
@@ -258,8 +265,13 @@ function useLangVersion(): void {
   }, []);
 }
 
-function SidebarBrandInner({ orgName, appLabel, colorKey }: { orgName: string | null; appLabel: string; colorKey?: string }) {
+function SidebarBrandInner({ orgName, appLabel, colorKey, tokenBalance }: { orgName: string | null; appLabel: string; colorKey?: string; tokenBalance?: number | null }) {
   const { collapsed } = useSidebar();
+  // Show the org's token balance under the name once loaded; fall back to the app
+  // label while loading / when unavailable.
+  const subtitle = typeof tokenBalance === "number"
+    ? `${tokenBalance.toLocaleString()} tokens`
+    : appLabel;
   return (
     <div className="flex w-full items-center gap-2 overflow-hidden px-4 py-3.5">
       <Avatar name={orgName} colorKey={colorKey} size={28} className="shrink-0" />
@@ -271,7 +283,7 @@ function SidebarBrandInner({ orgName, appLabel, colorKey }: { orgName: string | 
       >
         <div className="min-w-0 flex-1 text-left">
           <Text as="span" size="sm" weight="semibold" className="block truncate leading-tight">{orgName ?? "TRF"}</Text>
-          <Text as="span" size="xs" tone="muted" className="block truncate">{appLabel}</Text>
+          <Text as="span" size="xs" tone="muted" className="block truncate">{subtitle}</Text>
         </div>
         {/* Desktop-only org-switcher affordance (mobile uses the breadcrumb). */}
         <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
@@ -314,11 +326,11 @@ function OrgMenuItems({ orgs, currentSlug, onSelect, orgSettingsUrl }: Omit<OrgP
 
 // Desktop brand header — the whole block is the org-picker trigger (no chevron;
 // tapping the org name opens the picker).
-function SidebarBrand({ orgName, appLabel, ...org }: { orgName: string | null; appLabel: string } & OrgPickerProps) {
+function SidebarBrand({ orgName, appLabel, tokenBalance, ...org }: { orgName: string | null; appLabel: string; tokenBalance?: number | null } & OrgPickerProps) {
   return (
     <DropdownMenu onOpenChange={(open) => { if (open) org.onOpen(); }}>
       <DropdownMenuTrigger className="w-full hover:bg-muted transition-colors">
-        <SidebarBrandInner orgName={orgName} appLabel={appLabel} colorKey={org.currentSlug} />
+        <SidebarBrandInner orgName={orgName} appLabel={appLabel} colorKey={org.currentSlug} tokenBalance={tokenBalance} />
       </DropdownMenuTrigger>
       <OrgMenuItems {...org} />
     </DropdownMenu>
@@ -532,6 +544,7 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
   const [openGroups, setOpenGroups] = useState<string[]>([]);
   const [themeChoice, setThemeChoice] = useState<ThemeChoice>(readThemeChoice);
   const [orgs, setOrgs] = useState<OrgOption[]>([]);
+  const [tokenBalance, setTokenBalance] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -586,6 +599,34 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
     window.addEventListener("focus", refreshOrgs);
     return () => window.removeEventListener("focus", refreshOrgs);
   }, [refreshOrgs]);
+
+  // Token balance for the current org (shown under the org name on desktop). Same
+  // CORS-enabled login-api host as the org list; billing expects a `Bearer` header
+  // (not Authorization) carrying the org-scoped JWT. Refetch on focus + after a chat
+  // (trf:new-chat) since usage depletes the balance.
+  const refreshBalance = React.useCallback(() => {
+    const token = orgJwt(slug);
+    if (!token) { setTokenBalance(null); return; }
+    fetch(`${orgsApiBase}/v1/billing/balance`, {
+      credentials: "include",
+      headers: { Bearer: token },
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`balance ${r.status}`))))
+      .then((d: { balance?: number }) => {
+        setTokenBalance(typeof d?.balance === "number" ? d.balance : null);
+      })
+      .catch(() => { /* leave previous value; brand falls back to appLabel */ });
+  }, [orgsApiBase, slug]);
+
+  useEffect(() => {
+    refreshBalance();
+    window.addEventListener("focus", refreshBalance);
+    window.addEventListener("trf:new-chat", refreshBalance);
+    return () => {
+      window.removeEventListener("focus", refreshBalance);
+      window.removeEventListener("trf:new-chat", refreshBalance);
+    };
+  }, [refreshBalance]);
 
   useEffect(() => {
     let cancelled = false;
@@ -807,7 +848,7 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
       <MobileBar orgName={orgName} appLabel={appLabel} section={activeSectionLabel(items)} {...orgProps} />
       {/* Desktop brand (org picker). */}
       <SidebarHeader className="hidden md:flex">
-        <SidebarBrand orgName={orgName} appLabel={appLabel} {...orgProps} />
+        <SidebarBrand orgName={orgName} appLabel={appLabel} tokenBalance={tokenBalance} {...orgProps} />
       </SidebarHeader>
       <SidebarContent>
         <MenuSearchBox query={query} setQuery={setQuery} onOpenPalette={() => setPaletteOpen(true)} onKeyDown={onSearchKeyDown} />
