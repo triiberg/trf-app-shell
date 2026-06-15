@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import {
   AppShell, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarMenu,
-  SidebarMenuItem, SidebarMenuButton, SidebarMenuSub, SidebarTrigger, useSidebar,
+  SidebarMenuItem, SidebarMenuButton, SidebarMenuSub, SidebarTrigger, SidebarMobileTrigger, useSidebar,
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
   Button, Logo, Text, cn,
 } from "@trf/ui2";
@@ -174,6 +174,7 @@ function SidebarBrand({
   orgSettingsUrl: string;
   onOpen: () => void;
 }) {
+  const { setMobileOpen } = useSidebar();
   return (
     <DropdownMenu onOpenChange={(open) => { if (open) onOpen(); }}>
       <DropdownMenuTrigger className="w-full hover:bg-muted transition-colors">
@@ -183,7 +184,7 @@ function SidebarBrand({
         {orgs.length > 1 && (
           <>
             {orgs.map((o) => (
-              <DropdownMenuItem key={o.id} onSelect={() => onSelect(o.slug)}>
+              <DropdownMenuItem key={o.id} onSelect={() => { setMobileOpen(false); onSelect(o.slug); }}>
                 <Check className={cn("mr-2 size-4 shrink-0", o.slug === currentSlug ? "opacity-100" : "opacity-0")} />
                 <span className="truncate">{o.name}</span>
               </DropdownMenuItem>
@@ -191,12 +192,23 @@ function SidebarBrand({
             <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuItem onSelect={() => { window.location.href = orgSettingsUrl; }}>
+        <DropdownMenuItem onSelect={() => { setMobileOpen(false); window.location.href = orgSettingsUrl; }}>
           <Settings className="mr-2 size-4 shrink-0" />
           <span>Organisation settings</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+// Mobile-only top bar: the menu hamburger + brand. Sticky, respects the top safe-area.
+function MobileTopBar({ appLabel }: { appLabel: string }) {
+  return (
+    <div className="sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-card px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] md:hidden">
+      <SidebarMobileTrigger />
+      <Logo size={22} className="shrink-0" />
+      <Text as="span" size="sm" weight="semibold" className="truncate">{appLabel}</Text>
+    </div>
   );
 }
 
@@ -415,9 +427,20 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
   const hasActiveChild = (item: MenuItem): boolean =>
     !!item.children?.some((c) => isActive(c) || hasActiveChild(c));
 
-  // Auto-open the active route's group once the menu has loaded / the route changes.
+  // Ids of every group on the active path (any depth) — so the full branch opens.
+  const activeGroupIds = (nodes: MenuItem[]): string[] => {
+    const ids: string[] = [];
+    for (const n of nodes) {
+      if (n.children?.length && hasActiveChild(n)) {
+        ids.push(n.id, ...activeGroupIds(n.children));
+      }
+    }
+    return ids;
+  };
+
+  // Auto-open the active route's group(s) once the menu has loaded / the route changes.
   useEffect(() => {
-    const active = items.filter((i) => i.children?.length && hasActiveChild(i)).map((i) => i.id);
+    const active = activeGroupIds(items);
     if (active.length) setOpenGroups((prev) => Array.from(new Set([...prev, ...active])));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, baseUrls, location.pathname]);
@@ -430,13 +453,27 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
     else window.location.href = href;
   };
 
-  // A leaf/child nav row, optionally with a hover action.
-  const renderRow = (item: MenuItem, opts: { icon?: React.ReactNode } = {}) => {
+  // Recursive nav node: a group (with children) recurses into SidebarMenuSub; a leaf
+  // navigates. Only top-level rows carry a domain icon (matches the existing look).
+  const renderNode = (item: MenuItem, top: boolean): React.ReactNode => {
+    const Icon = top ? (ICONS[item.label.toLowerCase()] ?? Circle) : undefined;
+    if (item.children?.length) {
+      return (
+        <SidebarMenuItem key={item.id}>
+          <SidebarMenuButton groupId={item.id} icon={Icon ? <Icon /> : undefined} tooltip={item.label}>
+            {label(item)}
+          </SidebarMenuButton>
+          <SidebarMenuSub groupId={item.id}>
+            {item.children.map((c) => renderNode(c, false))}
+          </SidebarMenuSub>
+        </SidebarMenuItem>
+      );
+    }
     const action = itemAction?.(item, resolve(item)) ?? null;
     return (
       <SidebarMenuItem key={item.id} className={action ? "group/item relative" : undefined}>
         <SidebarMenuButton
-          icon={opts.icon}
+          icon={Icon ? <Icon /> : undefined}
           tooltip={item.label}
           isActive={isActive(item)}
           onClick={() => go(item)}
@@ -463,22 +500,7 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
       </SidebarHeader>
       <SidebarContent>
         <SidebarMenu>
-          {items.map((item) => {
-            const Icon = ICONS[item.label.toLowerCase()] ?? Circle;
-            if (item.children?.length) {
-              return (
-                <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton groupId={item.id} icon={<Icon />} tooltip={item.label}>
-                    {label(item)}
-                  </SidebarMenuButton>
-                  <SidebarMenuSub groupId={item.id}>
-                    {item.children.map((child) => renderRow(child))}
-                  </SidebarMenuSub>
-                </SidebarMenuItem>
-              );
-            }
-            return renderRow(item, { icon: <Icon /> });
-          })}
+          {items.map((item) => renderNode(item, true))}
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>
@@ -491,8 +513,10 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
   );
 
   // Each page owns its own content container (chat fills height; others center).
+  // The mobile top bar (md:hidden) sits above the routed content inside the inset.
   return (
     <AppShell sidebar={sidebar} openGroups={openGroups} onOpenGroupsChange={setOpenGroups}>
+      <MobileTopBar appLabel={appLabel} />
       {children}
     </AppShell>
   );
