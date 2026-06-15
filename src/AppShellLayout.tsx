@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Sparkles, BadgeDollarSign, Receipt, Wallet, Package, ScrollText, PieChart, Handshake,
-  Files, Boxes, Table2, Settings, ClipboardCheck, Network, Moon, Sun, Circle,
+  Files, Boxes, Table2, Settings, ClipboardCheck, Network, Moon, Sun, Monitor, Circle,
   Plus, LogOut, ChevronsUpDown, Check, Globe,
 } from "lucide-react";
 import {
@@ -48,8 +48,10 @@ export interface AppShellLayoutProps {
   appLabel: string;
   /** The app's live translation client (its `t` singleton). */
   translation: TranslationLike;
-  /** Login portal base (e.g. https://login.trf.is) for the org list + logout redirect. Defaults from the current hostname. */
+  /** Login portal base (e.g. https://login.trf.is) for logout redirect + "Organisation settings". Defaults from the current hostname. */
   loginUrl?: string;
+  /** CORS-enabled API base (e.g. https://login-api.trf.is) for the org list. Defaults from the current hostname. */
+  orgsApiUrl?: string;
   /** Optional per-row hover action; return null for rows without one. */
   itemAction?: (item: MenuItem, ctx: { href?: string; internal: boolean }) => ItemAction | null;
   children: React.ReactNode;
@@ -102,30 +104,31 @@ function orgNameFromCookie(slug?: string): string | null {
   }
 }
 
-function defaultLoginUrl(): string {
-  if (typeof window === "undefined") return "https://login.trf.is";
+function apexFor(sub: string): string {
+  if (typeof window === "undefined") return `https://${sub}.trf.is`;
   const parts = window.location.hostname.split(".");
   const apex = parts.length >= 2 ? parts.slice(-2).join(".") : "trf.is";
-  return `https://login.${apex}`;
+  return `https://${sub}.${apex}`;
 }
+const defaultLoginUrl = () => apexFor("login");      // user-facing portal
+const defaultLoginApiUrl = () => apexFor("login-api"); // CORS-enabled API
 
-// Theme is stored in a cookie on the apex domain (e.g. `.trf.is`) so the choice
-// is shared across every *.trf.is service — navigating AI → Purchase keeps the
-// same theme. Falls back to the legacy per-origin localStorage value on first read.
-function readThemeCookie(): string | null {
+// Theme is stored as a cookie on the apex domain (e.g. `.trf.is`) so the choice is
+// shared across every *.trf.is service — navigating AI → Purchase keeps the theme.
+type ThemeChoice = "light" | "dark" | "system";
+function readThemeChoice(): ThemeChoice {
   const m = document.cookie.match(/(?:^|; )trf-theme=([^;]*)/);
-  return m ? decodeURIComponent(m[1]) : null;
+  const v = m ? decodeURIComponent(m[1]) : localStorage.getItem("trf-theme");
+  return v === "light" || v === "dark" || v === "system" ? v : "light";
 }
-function writeThemeCookie(v: string): void {
+function writeThemeChoice(v: ThemeChoice): void {
   const parts = window.location.hostname.split(".");
   const domain = parts.length >= 2 ? `; domain=.${parts.slice(-2).join(".")}` : "";
   document.cookie = `trf-theme=${v}; path=/; max-age=31536000; samesite=lax${domain}`;
 }
-function initialDark(): boolean {
-  const c = readThemeCookie();
-  if (c === "dark" || c === "light") return c === "dark";
-  return localStorage.getItem("trf-theme") === "dark";
-}
+const systemPrefersDark = () =>
+  typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+const resolveDark = (c: ThemeChoice) => (c === "system" ? systemPrefersDark() : c === "dark");
 
 /** Re-render when the language changes (TranslationClient.setLang dispatches this). */
 function useLangVersion(): void {
@@ -161,7 +164,7 @@ function SidebarBrandInner({ orgName, appLabel, showChevron }: { orgName: string
 // Brand header — always a dropdown: lists organisations to switch to (when the
 // user has more than one) and an "Organisation settings" link to the portal.
 function SidebarBrand({
-  orgName, appLabel, orgs, currentSlug, onSelect, orgSettingsUrl,
+  orgName, appLabel, orgs, currentSlug, onSelect, orgSettingsUrl, onOpen,
 }: {
   orgName: string | null;
   appLabel: string;
@@ -169,9 +172,10 @@ function SidebarBrand({
   currentSlug?: string;
   onSelect: (slug: string) => void;
   orgSettingsUrl: string;
+  onOpen: () => void;
 }) {
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => { if (open) onOpen(); }}>
       <DropdownMenuTrigger className="w-full hover:bg-muted transition-colors">
         <SidebarBrandInner orgName={orgName} appLabel={appLabel} showChevron />
       </DropdownMenuTrigger>
@@ -270,8 +274,15 @@ function LogoutButton({ loginUrl }: { loginUrl: string }) {
   );
 }
 
-function ThemeToggle({ dark, onToggle }: { dark: boolean; onToggle: () => void }) {
+const THEME_OPTIONS: { value: ThemeChoice; label: string; Icon: React.ComponentType<{ className?: string }> }[] = [
+  { value: "light", label: "Light", Icon: Sun },
+  { value: "dark", label: "Dark", Icon: Moon },
+  { value: "system", label: "System", Icon: Monitor },
+];
+
+function ThemeSelect({ choice, onChange }: { choice: ThemeChoice; onChange: (c: ThemeChoice) => void }) {
   const { collapsed } = useSidebar();
+  const TriggerIcon = choice === "dark" ? Moon : choice === "system" ? Monitor : Sun;
   return (
     <div
       className={cn(
@@ -279,22 +290,29 @@ function ThemeToggle({ dark, onToggle }: { dark: boolean; onToggle: () => void }
         collapsed ? "max-w-0 opacity-0" : "max-w-[60px] opacity-100",
       )}
     >
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={onToggle}
-        aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-        title={dark ? "Switch to light mode" : "Switch to dark mode"}
-        className="size-8 text-muted-foreground hover:text-foreground"
-      >
-        {dark ? <Sun /> : <Moon />}
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="Theme"
+          title="Theme"
+          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4"
+        >
+          <TriggerIcon />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-40">
+          {THEME_OPTIONS.map(({ value, label, Icon }) => (
+            <DropdownMenuItem key={value} onSelect={() => onChange(value)}>
+              <Check className={cn("mr-2 size-4 shrink-0", value === choice ? "opacity-100" : "opacity-0")} />
+              <Icon className="mr-2 size-4 shrink-0" />
+              <span>{label}</span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
 
-export function AppShellLayout({ appId, appLabel, translation, loginUrl, itemAction, children }: AppShellLayoutProps) {
+export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApiUrl, itemAction, children }: AppShellLayoutProps) {
   useLangVersion();
   const navigate = useNavigate();
   const location = useLocation();
@@ -303,41 +321,58 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, itemAct
   const [items, setItems] = useState<MenuItem[]>([]);
   const [baseUrls, setBaseUrls] = useState<AppBaseUrls>({});
   const [openGroups, setOpenGroups] = useState<string[]>([]);
-  const [dark, setDark] = useState<boolean>(initialDark);
+  const [themeChoice, setThemeChoice] = useState<ThemeChoice>(readThemeChoice);
   const [orgs, setOrgs] = useState<OrgOption[]>([]);
   const orgName = useMemo(() => orgNameFromCookie(slug), [slug]);
   const lang = translation.getLang();
   const portalBase = loginUrl ?? defaultLoginUrl();
+  const orgsApiBase = orgsApiUrl ?? defaultLoginApiUrl();
   const orgSettingsUrl = slug
     ? `${portalBase}/app/${slug}/manage-organization/list`
     : `${portalBase}/app/manage-organization`;
 
   const label = (item: MenuItem) => item.labels?.[lang] ?? item.labels?.en ?? item.label;
 
+  // Apply theme; persist the choice to the apex cookie; follow the OS live in "system".
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", dark);
-    writeThemeCookie(dark ? "dark" : "light");
-    localStorage.setItem("trf-theme", dark ? "dark" : "light");
-  }, [dark]);
+    const apply = () => document.documentElement.classList.toggle("dark", resolveDark(themeChoice));
+    apply();
+    writeThemeChoice(themeChoice);
+    localStorage.setItem("trf-theme", themeChoice);
+    if (themeChoice === "system") {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    }
+  }, [themeChoice]);
 
-  // Organisations the user can switch between (for the brand picker).
-  useEffect(() => {
+  // Organisations the user can switch between (for the brand picker). Fetched from
+  // the CORS-enabled login-api host (the login portal sends no CORS headers).
+  const refreshOrgs = React.useCallback(() => {
     const token = jwtToken();
     if (!token) return;
-    let cancelled = false;
-    fetch(`${portalBase}/v1/organization`, {
+    fetch(`${orgsApiBase}/v1/organization`, {
       credentials: "include",
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => (r.ok ? r.json() : []))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`org list ${r.status}`))))
       .then((data: unknown) => {
-        if (cancelled) return;
-        const list = (Array.isArray(data) ? data : []).map((o: OrgOption) => ({ id: o.id, name: o.name, slug: o.slug }));
-        setOrgs(list);
+        const arr = Array.isArray(data)
+          ? data
+          : Array.isArray((data as { organizations?: unknown })?.organizations)
+            ? (data as { organizations: OrgOption[] }).organizations
+            : [];
+        setOrgs(arr.map((o: OrgOption) => ({ id: o.id, name: o.name, slug: o.slug })));
       })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [portalBase]);
+      .catch((e) => { console.warn("[app-shell] org list fetch failed:", e); });
+  }, [orgsApiBase]);
+
+  // Initial load + refetch when the tab regains focus (picks up newly-added orgs).
+  useEffect(() => {
+    refreshOrgs();
+    window.addEventListener("focus", refreshOrgs);
+    return () => window.removeEventListener("focus", refreshOrgs);
+  }, [refreshOrgs]);
 
   useEffect(() => {
     let cancelled = false;
@@ -423,6 +458,7 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, itemAct
           currentSlug={slug}
           onSelect={(s) => navigate(`/app/${s}`)}
           orgSettingsUrl={orgSettingsUrl}
+          onOpen={refreshOrgs}
         />
       </SidebarHeader>
       <SidebarContent>
@@ -447,7 +483,7 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, itemAct
       </SidebarContent>
       <SidebarFooter>
         <LanguageSelect translation={translation} />
-        <ThemeToggle dark={dark} onToggle={() => setDark((d) => !d)} />
+        <ThemeSelect choice={themeChoice} onChange={setThemeChoice} />
         <LogoutButton loginUrl={portalBase} />
         <SidebarTrigger />
       </SidebarFooter>
