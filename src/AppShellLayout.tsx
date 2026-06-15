@@ -299,14 +299,14 @@ function MobileBar({
 // centered to line up with the row chevrons. Hidden when the rail is collapsed.
 // Requires the enclosing SidebarMenuItem to be `relative`.
 function ItemActionButton({ action }: { action: ItemAction }) {
-  const { collapsed } = useSidebar();
+  const { collapsed, setMobileOpen } = useSidebar();
   if (collapsed) return null;
   return (
     <Button
       type="button"
       variant="ghost"
       size="icon"
-      onClick={(e) => { e.stopPropagation(); action.onClick(); }}
+      onClick={(e) => { e.stopPropagation(); setMobileOpen(false); action.onClick(); }}
       aria-label={action.label}
       title={action.label}
       className="absolute right-1.5 top-1/2 size-7 -translate-y-1/2 text-muted-foreground hover:text-foreground max-md:size-9"
