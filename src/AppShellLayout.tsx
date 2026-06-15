@@ -295,21 +295,24 @@ function MobileBar({
   );
 }
 
-// Hover-reveal row action (hidden when the rail is collapsed). Requires the
-// enclosing SidebarMenuItem to have `group/item relative`.
+// Always-visible row action (ghost icon button), right-aligned and vertically
+// centered to line up with the row chevrons. Hidden when the rail is collapsed.
+// Requires the enclosing SidebarMenuItem to be `relative`.
 function ItemActionButton({ action }: { action: ItemAction }) {
   const { collapsed } = useSidebar();
   if (collapsed) return null;
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="icon"
       onClick={(e) => { e.stopPropagation(); action.onClick(); }}
       aria-label={action.label}
       title={action.label}
-      className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover/item:opacity-100 [&_svg]:size-4"
+      className="absolute right-1.5 top-1/2 size-7 -translate-y-1/2 text-muted-foreground hover:text-foreground max-md:size-9"
     >
       {action.icon ?? <Plus />}
-    </button>
+    </Button>
   );
 }
 
