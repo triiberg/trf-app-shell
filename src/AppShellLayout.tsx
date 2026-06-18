@@ -9,7 +9,7 @@ import {
 import {
   AppShell, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarMenu,
   SidebarMenuItem, SidebarMenuButton, SidebarMenuSub, SidebarTrigger, useSidebar,
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   Dialog, DialogContent, DialogTitle,
   Command, CommandInput, CommandList, CommandEmpty, CommandItem,
   Button, SearchInput, Avatar, Text, cn,
@@ -296,30 +296,21 @@ interface OrgPickerProps {
   orgs: OrgOption[];
   currentSlug?: string;
   onSelect: (slug: string) => void;
-  orgSettingsUrl: string;
   onOpen: () => void;
 }
 
-// Shared dropdown body: switch orgs (when >1) + an "Organisation settings" link.
-function OrgMenuItems({ orgs, currentSlug, onSelect, orgSettingsUrl }: Omit<OrgPickerProps, "onOpen">) {
+// Shared dropdown body: switch orgs. Only rendered when there's more than one org
+// (org-level settings now live in the unified Settings menu / Organizations section).
+function OrgMenuItems({ orgs, currentSlug, onSelect }: Omit<OrgPickerProps, "onOpen">) {
   const { setMobileOpen } = useSidebar();
   return (
     <DropdownMenuContent align="start" className="w-56">
-      {orgs.length > 1 && (
-        <>
-          {orgs.map((o) => (
-            <DropdownMenuItem key={o.id} onSelect={() => { setMobileOpen(false); onSelect(o.slug); }}>
-              <Check className={cn("mr-2 size-4 shrink-0", o.slug === currentSlug ? "opacity-100" : "opacity-0")} />
-              <span className="truncate">{o.name}</span>
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
-        </>
-      )}
-      <DropdownMenuItem onSelect={() => { setMobileOpen(false); window.location.href = orgSettingsUrl; }}>
-        <Settings className="mr-2 size-4 shrink-0" />
-        <span>Organisation settings</span>
-      </DropdownMenuItem>
+      {orgs.map((o) => (
+        <DropdownMenuItem key={o.id} onSelect={() => { setMobileOpen(false); onSelect(o.slug); }}>
+          <Check className={cn("mr-2 size-4 shrink-0", o.slug === currentSlug ? "opacity-100" : "opacity-0")} />
+          <span className="truncate">{o.name}</span>
+        </DropdownMenuItem>
+      ))}
     </DropdownMenuContent>
   );
 }
@@ -327,10 +318,13 @@ function OrgMenuItems({ orgs, currentSlug, onSelect, orgSettingsUrl }: Omit<OrgP
 // Desktop brand header — the whole block is the org-picker trigger (no chevron;
 // tapping the org name opens the picker).
 function SidebarBrand({ orgName, appLabel, tokenBalance, ...org }: { orgName: string | null; appLabel: string; tokenBalance?: number | null } & OrgPickerProps) {
+  const inner = <SidebarBrandInner orgName={orgName} appLabel={appLabel} colorKey={org.currentSlug} tokenBalance={tokenBalance} />;
+  // Single org → nothing to switch to, so the brand is static (no dropdown).
+  if (org.orgs.length <= 1) return <div className="w-full">{inner}</div>;
   return (
     <DropdownMenu onOpenChange={(open) => { if (open) org.onOpen(); }}>
       <DropdownMenuTrigger className="w-full hover:bg-muted transition-colors">
-        <SidebarBrandInner orgName={orgName} appLabel={appLabel} colorKey={org.currentSlug} tokenBalance={tokenBalance} />
+        {inner}
       </DropdownMenuTrigger>
       <OrgMenuItems {...org} />
     </DropdownMenu>
@@ -403,12 +397,16 @@ function MobileBar({
     >
       <Avatar name={orgName} colorKey={org.currentSlug} size={24} className="shrink-0" />
       <div className="flex min-w-0 flex-1 items-center gap-1 text-sm">
-        <DropdownMenu onOpenChange={(open) => { if (open) org.onOpen(); }}>
-          <DropdownMenuTrigger className="min-w-0 truncate font-medium outline-none hover:opacity-80">
-            {orgName ?? "TRF"}
-          </DropdownMenuTrigger>
-          <OrgMenuItems {...org} />
-        </DropdownMenu>
+        {org.orgs.length <= 1 ? (
+          <span className="min-w-0 truncate font-medium">{orgName ?? "TRF"}</span>
+        ) : (
+          <DropdownMenu onOpenChange={(open) => { if (open) org.onOpen(); }}>
+            <DropdownMenuTrigger className="min-w-0 truncate font-medium outline-none hover:opacity-80">
+              {orgName ?? "TRF"}
+            </DropdownMenuTrigger>
+            <OrgMenuItems {...org} />
+          </DropdownMenu>
+        )}
         <Sep />
         <span className="shrink-0 text-muted-foreground">{appLabel}</span>
         {section && (<><Sep /><span className="min-w-0 truncate font-medium">{section}</span></>)}
@@ -553,9 +551,6 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
   const lang = translation.getLang();
   const portalBase = loginUrl ?? defaultLoginUrl();
   const orgsApiBase = orgsApiUrl ?? defaultLoginApiUrl();
-  const orgSettingsUrl = slug
-    ? `${portalBase}/app/${slug}/manage-organization/list`
-    : `${portalBase}/app/manage-organization`;
 
   const label = (item: MenuItem) => item.labels?.[lang] ?? item.labels?.en ?? item.label;
 
@@ -838,7 +833,6 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
     orgs,
     currentSlug: slug,
     onSelect: (s) => navigate(`/app/${s}`),
-    orgSettingsUrl,
     onOpen: refreshOrgs,
   };
 
