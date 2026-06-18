@@ -800,7 +800,14 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
   // navigates. Only top-level rows carry a domain icon (matches the existing look).
   const renderNode = (item: MenuItem, top: boolean): React.ReactNode => {
     const Icon = top ? (ICONS[item.label.toLowerCase()] ?? Circle) : undefined;
-    if (item.children?.length) {
+    // A group holding a single leaf adds a needless level (e.g. "Products › Product
+    // Settings"): collapse it to one row — keep the category label/icon, navigate to
+    // the lone child.
+    const collapsed =
+      item.children?.length === 1 && !item.children[0].children?.length
+        ? { ...item.children[0], label: item.label, labels: item.labels }
+        : null;
+    if (!collapsed && item.children?.length) {
       return (
         <SidebarMenuItem key={item.id}>
           <SidebarMenuButton groupId={item.id} icon={Icon ? <Icon /> : undefined} tooltip={item.label}>
@@ -812,17 +819,18 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
         </SidebarMenuItem>
       );
     }
-    const ctx = resolve(item);
-    const action = itemAction?.(item, ctx) ?? aiChatAction(item, ctx);
+    const node = collapsed ?? item;
+    const ctx = resolve(node);
+    const action = itemAction?.(node, ctx) ?? aiChatAction(node, ctx);
     return (
-      <SidebarMenuItem key={item.id} className={action ? "group/item relative" : undefined}>
+      <SidebarMenuItem key={node.id} className={action ? "group/item relative" : undefined}>
         <SidebarMenuButton
           icon={Icon ? <Icon /> : undefined}
-          tooltip={item.label}
-          isActive={isActive(item)}
-          onClick={() => go(item)}
+          tooltip={node.label}
+          isActive={isActive(node)}
+          onClick={() => go(node)}
         >
-          {label(item)}
+          {label(node)}
         </SidebarMenuButton>
         {action && <ItemActionButton action={action} />}
       </SidebarMenuItem>
