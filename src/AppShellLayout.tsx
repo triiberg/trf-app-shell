@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Sparkles, BadgeDollarSign, Receipt, Wallet, Package, ScrollText, PieChart, Handshake,
   Files, Boxes, Table2, Settings, ClipboardCheck, Network, Moon, Sun, Monitor, Circle,
-  Plus, LogOut, ChevronRight, ChevronsUpDown, Check, Globe, Menu, X, Search,
+  Plus, LogOut, ChevronRight, ChevronsUpDown, Check, Globe, Menu, X, Search, Palette,
 } from "lucide-react";
 import {
   AppShell, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarMenu,
@@ -254,6 +254,39 @@ function writeThemeChoice(v: ThemeChoice): void {
 const systemPrefersDark = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
 const resolveDark = (c: ThemeChoice) => (c === "system" ? systemPrefersDark() : c === "dark");
+
+// Color palette (independent of light/dark). "trivis" is the base brand palette
+// (no class); the others add a `theme-<value>` class on <html> — the palette tokens
+// shipped by @trf/ui2. Mirrors the trf-ui2 kitchen-sink theme picker.
+const PALETTE_OPTIONS: { value: string; label: string }[] = [
+  { value: "trivis", label: "Trivis" },
+  { value: "neutral", label: "Neutral" },
+  { value: "amber", label: "Amber" },
+  { value: "coffee", label: "Coffee" },
+  { value: "claude", label: "Claude" },
+  { value: "tangerine", label: "Tangerine" },
+  { value: "sky", label: "Sky" },
+  { value: "mars", label: "Mars" },
+  { value: "disco", label: "Disco" },
+  { value: "modern", label: "Modern" },
+];
+const PALETTE_VALUES = PALETTE_OPTIONS.map((p) => p.value);
+
+function readPalette(): string {
+  const m = document.cookie.match(/(?:^|; )trf-palette=([^;]*)/);
+  const v = m ? decodeURIComponent(m[1]) : localStorage.getItem("trf-palette");
+  return v && PALETTE_VALUES.includes(v) ? v : "trivis";
+}
+function writePalette(v: string): void {
+  const parts = window.location.hostname.split(".");
+  const domain = parts.length >= 2 ? `; domain=.${parts.slice(-2).join(".")}` : "";
+  document.cookie = `trf-palette=${v}; path=/; max-age=31536000; samesite=lax${domain}`;
+}
+function applyPalette(v: string): void {
+  const el = document.documentElement;
+  [...el.classList].filter((c) => c.startsWith("theme-")).forEach((c) => el.classList.remove(c));
+  if (v && v !== "trivis") el.classList.add(`theme-${v}`);
+}
 
 /** Re-render when the language changes (TranslationClient.setLang dispatches this). */
 function useLangVersion(): void {
@@ -531,6 +564,49 @@ function ThemeSelect({ choice, onChange }: { choice: ThemeChoice; onChange: (c: 
   );
 }
 
+// Four token swatches rendered under a palette's class, so each row previews THAT
+// palette's colors (recreates the trf-ui2 kitchen-sink theme picker).
+function PaletteSwatches({ palette }: { palette: string }) {
+  return (
+    <span className={cn("flex shrink-0 items-center gap-0.5", palette !== "trivis" && `theme-${palette}`)}>
+      {["bg-primary", "bg-secondary", "bg-accent", "bg-muted"].map((c) => (
+        <span key={c} className={cn("size-3 rounded-full ring-1 ring-black/10 dark:ring-white/20", c)} />
+      ))}
+    </span>
+  );
+}
+
+function PaletteSelect({ palette, onChange }: { palette: string; onChange: (p: string) => void }) {
+  const { collapsed } = useSidebar();
+  return (
+    <div
+      className={cn(
+        "flex items-center overflow-hidden transition-[max-width,opacity] duration-200",
+        collapsed ? "max-w-0 opacity-0" : "max-w-[60px] opacity-100",
+      )}
+    >
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="Color palette"
+          title="Color palette"
+          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4 max-md:size-10 max-md:[&_svg]:size-5"
+        >
+          <Palette />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-44">
+          {PALETTE_OPTIONS.map(({ value, label }) => (
+            <DropdownMenuItem key={value} onSelect={() => onChange(value)}>
+              <Check className={cn("mr-2 size-4 shrink-0", value === palette ? "opacity-100" : "opacity-0")} />
+              <PaletteSwatches palette={value} />
+              <span className="ml-2">{label}</span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
 export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApiUrl, itemAction, children }: AppShellLayoutProps) {
   useLangVersion();
   const navigate = useNavigate();
@@ -541,6 +617,7 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
   const [baseUrls, setBaseUrls] = useState<AppBaseUrls>({});
   const [openGroups, setOpenGroups] = useState<string[]>([]);
   const [themeChoice, setThemeChoice] = useState<ThemeChoice>(readThemeChoice);
+  const [palette, setPalette] = useState<string>(readPalette);
   const [orgs, setOrgs] = useState<OrgOption[]>([]);
   const [tokenBalance, setTokenBalance] = useState<number | null>(null);
   const [query, setQuery] = useState("");
@@ -566,6 +643,13 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
       return () => mq.removeEventListener("change", apply);
     }
   }, [themeChoice]);
+
+  // Apply the color palette and persist it to the apex cookie (shared across apps).
+  useEffect(() => {
+    applyPalette(palette);
+    writePalette(palette);
+    localStorage.setItem("trf-palette", palette);
+  }, [palette]);
 
   // Organisations the user can switch between (for the brand picker). Fetched from
   // the CORS-enabled login-api host (the login portal sends no CORS headers).
@@ -895,6 +979,7 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
       <SidebarFooter className="max-md:min-h-14 max-md:justify-around max-md:px-3">
         <LanguageSelect translation={translation} />
         <ThemeSelect choice={themeChoice} onChange={setThemeChoice} />
+        <PaletteSelect palette={palette} onChange={setPalette} />
         <LogoutButton loginUrl={portalBase} />
         <SidebarTrigger />
       </SidebarFooter>
