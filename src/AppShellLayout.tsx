@@ -14,6 +14,7 @@ import {
   Command, CommandInput, CommandList, CommandEmpty, CommandItem,
   Button, SearchInput, Avatar, Text, cn,
 } from "@trf/ui2";
+import { getOrgToken, peekOrgToken, clearLegacyOrgCookies } from "@trf/ui2";
 import { fetchDiscoveryMenu, logout } from "@trf/ui";
 import type { MenuItem, AppBaseUrls } from "@trf/ui";
 
@@ -212,21 +213,20 @@ function decodeJwtPayload(token: string): { o?: { n?: string } } {
 }
 
 function orgNameFromCookie(slug?: string): string | null {
-  if (!slug) return null;
-  const m = document.cookie.match(new RegExp(`trf_jwt_${slug}=([^;]+)`));
-  if (!m) return null;
+  const token = orgJwt(slug);
+  if (!token) return null;
   try {
-    return decodeJwtPayload(m[1])?.o?.n ?? null;
+    return decodeJwtPayload(token)?.o?.n ?? null;
   } catch {
     return null;
   }
 }
 
-/** Raw org-scoped JWT (the `trf_jwt_<slug>` cookie) — used as the per-org bearer. */
+/** Raw org-scoped JWT for the slug — from the per-tab cache (minted on demand), with a
+ *  legacy `trf_jwt_<slug>` cookie fallback during the cutover. Sync best-effort: callers
+ *  that can await should use getOrgToken() to mint when the cache is cold. */
 function orgJwt(slug?: string): string | null {
-  if (!slug) return null;
-  const m = document.cookie.match(new RegExp(`trf_jwt_${slug}=([^;]+)`));
-  return m ? m[1] : null;
+  return peekOrgToken(slug);
 }
 
 function apexFor(sub: string): string {
@@ -651,12 +651,18 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
     localStorage.setItem("trf-palette", palette);
   }, [palette]);
 
+  // Shed pre-cutover per-org cookies once, so the Cookie header stops growing with the
+  // number of accessible orgs. Org tokens now live in the per-tab cache.
+  useEffect(() => { clearLegacyOrgCookies(); }, []);
+
   // Organisations the user can switch between (for the brand picker). Fetched from
   // the CORS-enabled login-api host (the login portal sends no CORS headers).
   const refreshOrgs = React.useCallback(() => {
     const token = jwtToken();
     if (!token) return;
-    fetch(`${orgsApiBase}/v1/organization`, {
+    // tokens=false: metadata only. Org tokens are minted on demand per slug, so the
+    // switcher list never needs (or stores) a token per org.
+    fetch(`${orgsApiBase}/v1/organization?tokens=false`, {
       credentials: "include",
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -684,17 +690,19 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
   // (not Authorization) carrying the org-scoped JWT. Refetch on focus + after a chat
   // (trf:new-chat) since usage depletes the balance.
   const refreshBalance = React.useCallback(() => {
-    const token = orgJwt(slug);
-    if (!token) { setTokenBalance(null); return; }
-    fetch(`${orgsApiBase}/v1/billing/balance`, {
-      credentials: "include",
-      headers: { Bearer: token },
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`balance ${r.status}`))))
-      .then((d: { balance?: number }) => {
-        setTokenBalance(typeof d?.balance === "number" ? d.balance : null);
+    if (!slug) { setTokenBalance(null); return; }
+    // Mint the org token on demand (cache-first) so balance works on a cold tab too.
+    void getOrgToken(slug).then(({ token }) => {
+      if (!token) { setTokenBalance(null); return; }
+      return fetch(`${orgsApiBase}/v1/billing/balance`, {
+        credentials: "include",
+        headers: { Bearer: token },
       })
-      .catch(() => { /* leave previous value; brand falls back to appLabel */ });
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`balance ${r.status}`))))
+        .then((d: { balance?: number }) => {
+          setTokenBalance(typeof d?.balance === "number" ? d.balance : null);
+        });
+    }).catch(() => { /* leave previous value; brand falls back to appLabel */ });
   }, [orgsApiBase, slug]);
 
   useEffect(() => {
@@ -709,16 +717,19 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
 
   useEffect(() => {
     let cancelled = false;
-    fetchDiscoveryMenu({
-      authCookieName: slug ? `trf_jwt_${slug}` : undefined,
-      credentials: "include",
-    })
-      .then((r) => {
+    // Mint the org token for this slug (cache-first), then hand it to the discovery client
+    // directly instead of pointing it at a per-org cookie.
+    void (slug ? getOrgToken(slug) : Promise.resolve({ token: null as string | null })).then(({ token }) => {
+      if (cancelled) return;
+      return fetchDiscoveryMenu({
+        authToken: token ?? undefined,
+        credentials: "include",
+      }).then((r) => {
         if (cancelled) return;
         setItems(r.items);
         setBaseUrls(r.baseUrls);
-      })
-      .catch(() => {});
+      });
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [slug]);
 
