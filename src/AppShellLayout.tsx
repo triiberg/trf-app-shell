@@ -715,6 +715,12 @@ export function AppShellLayout({ appId, appLabel, translation, loginUrl, orgsApi
   }, [refreshBalance]);
 
   useEffect(() => {
+    // When a slug is present the discovery menu is org-scoped, so wait for the org token to
+    // mint before calling it. Firing early (orgToken still null) makes the discovery client
+    // fall back to the account `jwt_token` cookie and send it to the org-scoped endpoint,
+    // which rejects it with 401 "invalid token". The no-slug case (e.g. /app/new-organization)
+    // has no org token and legitimately falls back to the account credential.
+    if (slug && !orgToken) return;
     let cancelled = false;
     // Hand the (minted, reactive) org token to the discovery client instead of pointing it
     // at a per-org cookie. Re-runs when the token lands so the menu authenticates correctly.
